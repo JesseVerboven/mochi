@@ -1,0 +1,62 @@
+{
+  "name": "mochi",
+  "productName": "Mochi",
+  "version": "1.0.0",
+  "description": "Mochi — a living liquid-glass companion that hangs from a dynamic island at the top of your Windows desktop.",
+  "main": "main.js",
+  "author": "Jesse Verboven",
+  "license": "MIT",
+  "homepage": "https://github.com/JesseVerboven/mochi",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JesseVerboven/mochi.git"
+  },
+  "keywords": ["desktop-companion", "dynamic-island", "electron", "windows", "webgl", "widget"],
+  "scripts": {
+    "start": "electron .",
+    "start:debug": "set COMPANION_DEBUG=1&& set COMPANION_NO_PROTECT=1&& electron .",
+    "icon": "node scripts/make-icon.js",
+    "screenshots": "electron scripts/shots/main.js",
+    "dist": "electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.mochi.companion",
+    "productName": "Mochi",
+    "copyright": "Copyright © 2026 Jesse Verboven",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**",
+      "settings/**",
+      "helpers/**",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "helpers/**"
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Mochi",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Mochi-Setup-${version}.exe"
+    }
+  }
+}
