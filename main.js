@@ -156,12 +156,12 @@ function placement() {
   return { x: Math.round(d.bounds.x + (d.bounds.width - WIN_W) / 2), y: d.workArea.y, display: d };
 }
 function sendGeometry() {
-  if (!win) return;
+  if (!islandAlive()) return;
   const d = screen.getPrimaryDisplay();
   send('geometry', { win: win.getBounds(), display: d.bounds, scale: d.scaleFactor });
 }
 function reposition() {
-  if (!win) return;
+  if (!islandAlive()) return;
   const { x, y } = placement();
   win.setBounds({ x, y, width: WIN_W, height: WIN_H });
   sendGeometry();
@@ -229,6 +229,7 @@ function createWindow() {
 }
 
 ipcMain.on('ready', () => {
+  if (!islandAlive()) return;
   rendererReady = true;
   if (process.env.COMPANION_DEBUG) console.log('[main] renderer ready', win.getBounds());
   sendGeometry();
@@ -241,7 +242,7 @@ ipcMain.on('ready', () => {
 });
 
 ipcMain.on('interactive', (_e, on) => {
-  if (win) win.setIgnoreMouseEvents(!on, { forward: true });
+  if (islandAlive()) win.setIgnoreMouseEvents(!on, { forward: true });
 });
 
 ipcMain.on('media-cmd', (_e, cmd) => {
@@ -355,14 +356,14 @@ ipcMain.on('shelf:drag', (e, ids) => {
 function startSensors() {
   // Cursor: poll globally (the window is click-through so DOM events are not enough).
   let last = { x: NaN, y: NaN };
-  setInterval(() => {
-    if (!win || !win.isVisible()) return;
+  every(16, () => {
+    if (!islandAlive() || !win.isVisible()) return;
     const p = screen.getCursorScreenPoint();
     if (p.x === last.x && p.y === last.y) return;
     last = p;
     const b = win.getBounds();
     send('cursor', { x: p.x - b.x, y: p.y - b.y });
-  }, 16);
+  });
 
   // CPU / memory / idle.
   const cpuTimes = () => os.cpus().reduce((a, c) => {
@@ -372,7 +373,7 @@ function startSensors() {
     return a;
   }, { idle: 0, total: 0 });
   let prev = cpuTimes();
-  setInterval(() => {
+  every(2000, () => {
     const cur = cpuTimes();
     const dTotal = cur.total - prev.total;
     const cpu = dTotal > 0 ? 1 - (cur.idle - prev.idle) / dTotal : 0;
@@ -382,7 +383,7 @@ function startSensors() {
       mem: 1 - os.freemem() / os.totalmem(),
       idle: powerMonitor.getSystemIdleTime(),
     });
-  }, 2000);
+  });
 
   startClipboardWatcher();
   if (settings.mediaEnabled) startMediaWatcher();
@@ -404,8 +405,21 @@ function startSensors() {
   for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, reposition);
 
   // Some apps grab topmost; re-assert politely.
-  setInterval(() => { if (win && win.isVisible()) win.setAlwaysOnTop(true, 'screen-saver'); }, 5000);
+  every(5000, () => { if (islandAlive() && win.isVisible()) win.setAlwaysOnTop(true, 'screen-saver'); });
 }
+
+// Timers that touch the window. They're all stopped on quit, and every tick
+// checks the window is still alive: touching a destroyed BrowserWindow throws
+// "Object has been destroyed" in the main process.
+const timers = [];
+const islandAlive = () => !!win && !win.isDestroyed();
+function every(ms, fn) {
+  timers.push(setInterval(() => {
+    if (app.isQuitting) return;
+    try { fn(); } catch (e) { console.warn('[mochi] timer:', e.message); }
+  }, ms));
+}
+function stopTimers() { while (timers.length) clearInterval(timers.pop()); }
 
 /*
  * Clipboard watching runs in a separate PowerShell process. Reading the
@@ -573,6 +587,7 @@ function startServer() {
           if (Array.isArray(j.shelfAdd)) addToShelf(j.shelfAdd);
           if (j.set && typeof j.set === 'object') for (const [k, v] of Object.entries(j.set)) setSetting(k, v);
           if (j.openSettings) openSettings();
+          if (j.quit) setTimeout(() => app.quit(), 50); // same path as the tray's Quit
           send('debug', j);
           res.end('ok\n');
         } catch { res.writeHead(400); res.end(); }
@@ -653,7 +668,7 @@ function trayIcon() {
 }
 
 function toggleVisible() {
-  if (!win) return;
+  if (!islandAlive()) return;
   if (win.isVisible()) win.hide(); else win.showInactive();
   buildMenu();
 }
@@ -661,7 +676,7 @@ function toggleVisible() {
 function buildMenu() {
   if (!tray) return;
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: `${win && win.isVisible() ? 'Hide' : 'Show'} ${settings.name}`, click: toggleVisible },
+    { label: `${islandAlive() && win.isVisible() ? 'Hide' : 'Show'} ${settings.name}`, click: toggleVisible },
     { label: 'Settings…', click: openSettings },
     { type: 'separator' },
     { label: 'Do not disturb', type: 'checkbox', checked: settings.dnd, click: (i) => setSetting('dnd', i.checked) },
@@ -692,6 +707,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => app.quit());
   app.on('before-quit', () => {
     app.isQuitting = true;
+    stopTimers();
     if (clipProc) { const p = clipProc; clipProc = null; p.kill(); }
     if (mediaProc) { const p = mediaProc; mediaProc = null; p.kill(); }
   });

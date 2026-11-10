@@ -1,7 +1,7 @@
 {
   "name": "mochi",
   "productName": "Mochi",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Mochi — a living liquid-glass companion that hangs from a dynamic island at the top of your Windows desktop.",
   "main": "main.js",
   "author": "Jesse Verboven",
